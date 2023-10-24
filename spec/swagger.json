@@ -221,9 +221,27 @@
             "in": "query"
           },
           {
+            "enum": [
+              "",
+              "strong",
+              "eventual"
+            ],
             "type": "string",
-            "description": "CredentialsIdentifier is the identifier (username, email) of the credentials to look up.",
+            "x-go-enum-desc": " ConsistencyLevelUnset  ConsistencyLevelUnset is the unset / default consistency level.\nstrong ConsistencyLevelStrong  ConsistencyLevelStrong is the strong consistency level.\neventual ConsistencyLevelEventual  ConsistencyLevelEventual is the eventual consistency level using follower read timestamps.",
+            "description": "Read Consistency Level (preview)\n\nThe read consistency level determines the consistency guarantee for reads:\n\nstrong (slow): The read is guaranteed to return the most recent data committed at the start of the read.\neventual (very fast): The result will return data that is about 4.8 seconds old.\n\nThe default consistency guarantee can be changed in the Ory Network Console or using the Ory CLI with\n`ory patch project --replace '/previews/default_read_consistency_level=\"strong\"'`.\n\nSetting the default consistency level to `eventual` may cause regressions in the future as we add consistency\ncontrols to more APIs. Currently, the following APIs will be affected by this setting:\n\n`GET /admin/identities`\n\nThis feature is in preview and only available in Ory Network.\n ConsistencyLevelUnset  ConsistencyLevelUnset is the unset / default consistency level.\nstrong ConsistencyLevelStrong  ConsistencyLevelStrong is the strong consistency level.\neventual ConsistencyLevelEventual  ConsistencyLevelEventual is the eventual consistency level using follower read timestamps.",
+            "name": "consistency",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "CredentialsIdentifier is the identifier (username, email) of the credentials to look up using exact match.\nOnly one of CredentialsIdentifier and CredentialsIdentifierSimilar can be used.",
             "name": "credentials_identifier",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "This is an EXPERIMENTAL parameter that WILL CHANGE. Do NOT rely on consistent, deterministic behavior.\nTHIS PARAMETER WILL BE REMOVED IN AN UPCOMING RELEASE WITHOUT ANY MIGRATION PATH.\n\nCredentialsIdentifierSimilar is the (partial) identifier (username, email) of the credentials to look up using similarity search.\nOnly one of CredentialsIdentifier and CredentialsIdentifierSimilar can be used.",
+            "name": "preview_credentials_identifier_similar",
             "in": "query"
           }
         ],
@@ -1600,6 +1618,12 @@
             "description": "An optional Hydra login challenge. If present, Kratos will cooperate with\nOry Hydra to act as an OAuth2 identity provider.\n\nThe value for this parameter comes from `login_challenge` URL Query parameter sent to your\napplication (e.g. `/login?login_challenge=abcde`).",
             "name": "login_challenge",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "An optional organization ID that should be used for logging this user in.\nThis parameter is only effective in the Ory Network.",
+            "name": "organization",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2227,6 +2251,11 @@
             "type": "string",
             "description": "The URL to return the browser to after the verification flow was completed.\n\nAfter the registration flow is completed, the user will be sent a verification email.\nUpon completing the verification flow, this URL will be used to override the default\n`selfservice.flows.verification.after.default_redirect_to` value.",
             "name": "after_verification_return_to",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "name": "organization",
             "in": "query"
           }
         ],
@@ -3010,7 +3039,7 @@
     },
     "/sessions/whoami": {
       "get": {
-        "description": "Uses the HTTP Headers in the GET request to determine (e.g. by using checking the cookies) who is authenticated.\nReturns a session object in the body or 401 if the credentials are invalid or no credentials were sent.\nWhen the request it successful it adds the user ID to the 'X-Kratos-Authenticated-Identity-Id' header\nin the response.\n\nIf you call this endpoint from a server-side application, you must forward the HTTP Cookie Header to this endpoint:\n\n```js\npseudo-code example\nrouter.get('/protected-endpoint', async function (req, res) {\nconst session = await client.toSession(undefined, req.header('cookie'))\n\nconsole.log(session)\n})\n```\n\nWhen calling this endpoint from a non-browser application (e.g. mobile app) you must include the session token:\n\n```js\npseudo-code example\n...\nconst session = await client.toSession(\"the-session-token\")\n\nconsole.log(session)\n```\n\nDepending on your configuration this endpoint might return a 403 status code if the session has a lower Authenticator\nAssurance Level (AAL) than is possible for the identity. This can happen if the identity has password + webauthn\ncredentials (which would result in AAL2) but the session has only AAL1. If this error occurs, ask the user\nto sign in with the second factor or change the configuration.\n\nThis endpoint is useful for:\n\nAJAX calls. Remember to send credentials and set up CORS correctly!\nReverse proxies and API Gateways\nServer-side calls - use the `X-Session-Token` header!\n\nThis endpoint authenticates users by checking:\n\nif the `Cookie` HTTP header was set containing an Ory Kratos Session Cookie;\nif the `Authorization: bearer \u003cory-session-token\u003e` HTTP header was set with a valid Ory Kratos Session Token;\nif the `X-Session-Token` HTTP header was set with a valid Ory Kratos Session Token.\n\nIf none of these headers are set or the cookie or token are invalid, the endpoint returns a HTTP 401 status code.\n\nAs explained above, this request may fail due to several reasons. The `error.id` can be one of:\n\n`session_inactive`: No active session was found in the request (e.g. no Ory Session Cookie / Ory Session Token).\n`session_aal2_required`: An active session was found but it does not fulfil the Authenticator Assurance Level, implying that the session must (e.g.) authenticate the second factor.",
+        "description": "Uses the HTTP Headers in the GET request to determine (e.g. by using checking the cookies) who is authenticated.\nReturns a session object in the body or 401 if the credentials are invalid or no credentials were sent.\nWhen the request it successful it adds the user ID to the 'X-Kratos-Authenticated-Identity-Id' header\nin the response.\n\nIf you call this endpoint from a server-side application, you must forward the HTTP Cookie Header to this endpoint:\n\n```js\npseudo-code example\nrouter.get('/protected-endpoint', async function (req, res) {\nconst session = await client.toSession(undefined, req.header('cookie'))\n\nconsole.log(session)\n})\n```\n\nWhen calling this endpoint from a non-browser application (e.g. mobile app) you must include the session token:\n\n```js\npseudo-code example\n...\nconst session = await client.toSession(\"the-session-token\")\n\nconsole.log(session)\n```\n\nWhen using a token template, the token is included in the `tokenized` field of the session.\n\n```js\npseudo-code example\n...\nconst session = await client.toSession(\"the-session-token\", { tokenize_as: \"example-jwt-template\" })\n\nconsole.log(session.tokenized) // The JWT\n```\n\nDepending on your configuration this endpoint might return a 403 status code if the session has a lower Authenticator\nAssurance Level (AAL) than is possible for the identity. This can happen if the identity has password + webauthn\ncredentials (which would result in AAL2) but the session has only AAL1. If this error occurs, ask the user\nto sign in with the second factor or change the configuration.\n\nThis endpoint is useful for:\n\nAJAX calls. Remember to send credentials and set up CORS correctly!\nReverse proxies and API Gateways\nServer-side calls - use the `X-Session-Token` header!\n\nThis endpoint authenticates users by checking:\n\nif the `Cookie` HTTP header was set containing an Ory Kratos Session Cookie;\nif the `Authorization: bearer \u003cory-session-token\u003e` HTTP header was set with a valid Ory Kratos Session Token;\nif the `X-Session-Token` HTTP header was set with a valid Ory Kratos Session Token.\n\nIf none of these headers are set or the cookie or token are invalid, the endpoint returns a HTTP 401 status code.\n\nAs explained above, this request may fail due to several reasons. The `error.id` can be one of:\n\n`session_inactive`: No active session was found in the request (e.g. no Ory Session Cookie / Ory Session Token).\n`session_aal2_required`: An active session was found but it does not fulfil the Authenticator Assurance Level, implying that the session must (e.g.) authenticate the second factor.",
         "produces": [
           "application/json"
         ],
@@ -3035,6 +3064,12 @@
             "description": "Set the Cookie Header. This is especially useful when calling this endpoint from a server-side application. In that\nscenario you must include the HTTP Cookie Header which originally was included in the request to your server.\nAn example of a session in the HTTP Cookie Header is: `ory_kratos_session=a19iOVAbdzdgl70Rq1QZmrKmcjDtdsviCTZx7m9a9yHIUS8Wa9T7hvqyGTsLHi6Qifn2WUfpAKx9DWp0SJGleIn9vh2YF4A16id93kXFTgIgmwIOvbVAScyrx7yVl6bPZnCx27ec4WQDtaTewC1CpgudeDV2jQQnSaCP6ny3xa8qLH-QUgYqdQuoA_LF1phxgRCUfIrCLQOkolX5nv3ze_f==`.\n\nIt is ok if more than one cookie are included here as all other cookies will be ignored.",
             "name": "Cookie",
             "in": "header"
+          },
+          {
+            "type": "string",
+            "description": "Returns the session additionally as a token (such as a JWT)\n\nThe value of this parameter has to be a valid, configured Ory Session token template. For more information head over to [the documentation](http://ory.sh/docs/identities/session-to-jwt-cors).",
+            "name": "tokenize_as",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3171,6 +3206,19 @@
         "Time": {
           "type": "string",
           "format": "date-time"
+        },
+        "Valid": {
+          "type": "boolean"
+        }
+      }
+    },
+    "NullUUID": {
+      "description": "NullUUID can be used with the standard sql package to represent a\nUUID value that can be NULL in the database.",
+      "type": "object",
+      "properties": {
+        "UUID": {
+          "type": "string",
+          "format": "uuid"
         },
         "Valid": {
           "type": "boolean"
@@ -3502,6 +3550,22 @@
         }
       }
     },
+    "consistencyRequestParameters": {
+      "description": "Control API consistency guarantees",
+      "type": "object",
+      "properties": {
+        "consistency": {
+          "description": "Read Consistency Level (preview)\n\nThe read consistency level determines the consistency guarantee for reads:\n\nstrong (slow): The read is guaranteed to return the most recent data committed at the start of the read.\neventual (very fast): The result will return data that is about 4.8 seconds old.\n\nThe default consistency guarantee can be changed in the Ory Network Console or using the Ory CLI with\n`ory patch project --replace '/previews/default_read_consistency_level=\"strong\"'`.\n\nSetting the default consistency level to `eventual` may cause regressions in the future as we add consistency\ncontrols to more APIs. Currently, the following APIs will be affected by this setting:\n\n`GET /admin/identities`\n\nThis feature is in preview and only available in Ory Network.\n ConsistencyLevelUnset  ConsistencyLevelUnset is the unset / default consistency level.\nstrong ConsistencyLevelStrong  ConsistencyLevelStrong is the strong consistency level.\neventual ConsistencyLevelEventual  ConsistencyLevelEventual is the eventual consistency level using follower read timestamps.",
+          "type": "string",
+          "enum": [
+            "",
+            "strong",
+            "eventual"
+          ],
+          "x-go-enum-desc": " ConsistencyLevelUnset  ConsistencyLevelUnset is the unset / default consistency level.\nstrong ConsistencyLevelStrong  ConsistencyLevelStrong is the strong consistency level.\neventual ConsistencyLevelEventual  ConsistencyLevelEventual is the eventual consistency level using follower read timestamps."
+        }
+      }
+    },
     "continueWith": {
     },
     "continueWithSetOrySessionToken": {
@@ -3513,13 +3577,12 @@
       ],
       "properties": {
         "action": {
-          "description": "Action will always be `set_ory_session_token`\nset_ory_session_token ContinueWithActionSetOrySessionToken\nshow_verification_ui ContinueWithActionShowVerificationUI",
+          "description": "Action will always be `set_ory_session_token`\nset_ory_session_token ContinueWithActionSetOrySessionTokenString",
           "type": "string",
           "enum": [
-            "set_ory_session_token",
-            "show_verification_ui"
+            "set_ory_session_token"
           ],
-          "x-go-enum-desc": "set_ory_session_token ContinueWithActionSetOrySessionToken\nshow_verification_ui ContinueWithActionShowVerificationUI"
+          "x-go-enum-desc": "set_ory_session_token ContinueWithActionSetOrySessionTokenString"
         },
         "ory_session_token": {
           "description": "Token is the token of the session",
@@ -3536,13 +3599,12 @@
       ],
       "properties": {
         "action": {
-          "description": "Action will always be `show_verification_ui`\nset_ory_session_token ContinueWithActionSetOrySessionToken\nshow_verification_ui ContinueWithActionShowVerificationUI",
+          "description": "Action will always be `show_verification_ui`\nshow_verification_ui ContinueWithActionShowVerificationUIString",
           "type": "string",
           "enum": [
-            "set_ory_session_token",
             "show_verification_ui"
           ],
-          "x-go-enum-desc": "set_ory_session_token ContinueWithActionSetOrySessionToken\nshow_verification_ui ContinueWithActionShowVerificationUI"
+          "x-go-enum-desc": "show_verification_ui ContinueWithActionShowVerificationUIString"
         },
         "flow": {
           "$ref": "#/definitions/continueWithVerificationUiFlow"
@@ -3860,6 +3922,9 @@
         "metadata_public": {
           "$ref": "#/definitions/nullJsonRawMessage"
         },
+        "organization_id": {
+          "$ref": "#/definitions/NullUUID"
+        },
         "recovery_addresses": {
           "description": "RecoveryAddresses contains all the addresses that can be used to recover an identity.",
           "type": "array",
@@ -3969,6 +4034,9 @@
           "type": "string"
         },
         "initial_refresh_token": {
+          "type": "string"
+        },
+        "organization": {
           "type": "string"
         },
         "provider": {
@@ -4230,6 +4298,9 @@
         },
         "oauth2_login_request": {
           "$ref": "#/definitions/OAuth2LoginRequest"
+        },
+        "organization_id": {
+          "$ref": "#/definitions/NullUUID"
         },
         "refresh": {
           "description": "Refresh stores whether this login flow should enforce re-authentication.",
@@ -4626,6 +4697,9 @@
         "oauth2_login_request": {
           "$ref": "#/definitions/OAuth2LoginRequest"
         },
+        "organization_id": {
+          "$ref": "#/definitions/NullUUID"
+        },
         "request_url": {
           "description": "RequestURL is the initial URL that was requested from Ory Kratos. It can be used\nto forward information contained in the URL's path or query for example.",
           "type": "string"
@@ -4730,6 +4804,10 @@
           "description": "The Session Issuance Timestamp\n\nWhen this session was issued at. Usually equal or close to `authenticated_at`.",
           "type": "string",
           "format": "date-time"
+        },
+        "tokenized": {
+          "description": "Tokenized is the tokenized (e.g. JWT) version of the session.\n\nIt is only set when the `tokenize` query parameter was set to a valid tokenize template during calls to `/session/whoami`.",
+          "type": "string"
         }
       }
     },
@@ -4748,6 +4826,10 @@
         },
         "method": {
           "$ref": "#/definitions/identityCredentialsType"
+        },
+        "organization": {
+          "description": "The Organization id used for authentication",
+          "type": "string"
         },
         "provider": {
           "description": "OIDC or SAML provider id used for authentication",

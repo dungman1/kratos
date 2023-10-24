@@ -665,6 +665,16 @@ type FrontendApi interface {
 		console.log(session)
 		```
 
+		When using a token template, the token is included in the `tokenized` field of the session.
+
+		```js
+		pseudo-code example
+		...
+		const session = await client.toSession("the-session-token", { tokenize_as: "example-jwt-template" })
+
+		console.log(session.tokenized) // The JWT
+		```
+
 		Depending on your configuration this endpoint might return a 403 status code if the session has a lower Authenticator
 		Assurance Level (AAL) than is possible for the identity. This can happen if the identity has password + webauthn
 		credentials (which would result in AAL2) but the session has only AAL1. If this error occurs, ask the user
@@ -931,6 +941,7 @@ type FrontendApiApiCreateBrowserLoginFlowRequest struct {
 	returnTo       *string
 	cookie         *string
 	loginChallenge *string
+	organization   *string
 }
 
 func (r FrontendApiApiCreateBrowserLoginFlowRequest) Refresh(refresh bool) FrontendApiApiCreateBrowserLoginFlowRequest {
@@ -951,6 +962,10 @@ func (r FrontendApiApiCreateBrowserLoginFlowRequest) Cookie(cookie string) Front
 }
 func (r FrontendApiApiCreateBrowserLoginFlowRequest) LoginChallenge(loginChallenge string) FrontendApiApiCreateBrowserLoginFlowRequest {
 	r.loginChallenge = &loginChallenge
+	return r
+}
+func (r FrontendApiApiCreateBrowserLoginFlowRequest) Organization(organization string) FrontendApiApiCreateBrowserLoginFlowRequest {
+	r.organization = &organization
 	return r
 }
 
@@ -1030,6 +1045,9 @@ func (a *FrontendApiService) CreateBrowserLoginFlowExecute(r FrontendApiApiCreat
 	}
 	if r.loginChallenge != nil {
 		localVarQueryParams.Add("login_challenge", parameterToString(*r.loginChallenge, ""))
+	}
+	if r.organization != nil {
+		localVarQueryParams.Add("organization", parameterToString(*r.organization, ""))
 	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}
@@ -1404,6 +1422,7 @@ type FrontendApiApiCreateBrowserRegistrationFlowRequest struct {
 	returnTo                  *string
 	loginChallenge            *string
 	afterVerificationReturnTo *string
+	organization              *string
 }
 
 func (r FrontendApiApiCreateBrowserRegistrationFlowRequest) ReturnTo(returnTo string) FrontendApiApiCreateBrowserRegistrationFlowRequest {
@@ -1416,6 +1435,10 @@ func (r FrontendApiApiCreateBrowserRegistrationFlowRequest) LoginChallenge(login
 }
 func (r FrontendApiApiCreateBrowserRegistrationFlowRequest) AfterVerificationReturnTo(afterVerificationReturnTo string) FrontendApiApiCreateBrowserRegistrationFlowRequest {
 	r.afterVerificationReturnTo = &afterVerificationReturnTo
+	return r
+}
+func (r FrontendApiApiCreateBrowserRegistrationFlowRequest) Organization(organization string) FrontendApiApiCreateBrowserRegistrationFlowRequest {
+	r.organization = &organization
 	return r
 }
 
@@ -1488,6 +1511,9 @@ func (a *FrontendApiService) CreateBrowserRegistrationFlowExecute(r FrontendApiA
 	}
 	if r.afterVerificationReturnTo != nil {
 		localVarQueryParams.Add("after_verification_return_to", parameterToString(*r.afterVerificationReturnTo, ""))
+	}
+	if r.organization != nil {
+		localVarQueryParams.Add("organization", parameterToString(*r.organization, ""))
 	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}
@@ -4477,6 +4503,7 @@ type FrontendApiApiToSessionRequest struct {
 	ApiService    FrontendApi
 	xSessionToken *string
 	cookie        *string
+	tokenizeAs    *string
 }
 
 func (r FrontendApiApiToSessionRequest) XSessionToken(xSessionToken string) FrontendApiApiToSessionRequest {
@@ -4485,6 +4512,10 @@ func (r FrontendApiApiToSessionRequest) XSessionToken(xSessionToken string) Fron
 }
 func (r FrontendApiApiToSessionRequest) Cookie(cookie string) FrontendApiApiToSessionRequest {
 	r.cookie = &cookie
+	return r
+}
+func (r FrontendApiApiToSessionRequest) TokenizeAs(tokenizeAs string) FrontendApiApiToSessionRequest {
+	r.tokenizeAs = &tokenizeAs
 	return r
 }
 
@@ -4519,6 +4550,16 @@ pseudo-code example
 const session = await client.toSession("the-session-token")
 
 console.log(session)
+```
+
+When using a token template, the token is included in the `tokenized` field of the session.
+
+```js
+pseudo-code example
+...
+const session = await client.toSession("the-session-token", { tokenize_as: "example-jwt-template" })
+
+console.log(session.tokenized) // The JWT
 ```
 
 Depending on your configuration this endpoint might return a 403 status code if the session has a lower Authenticator
@@ -4579,6 +4620,9 @@ func (a *FrontendApiService) ToSessionExecute(r FrontendApiApiToSessionRequest) 
 	localVarQueryParams := url.Values{}
 	localVarFormParams := url.Values{}
 
+	if r.tokenizeAs != nil {
+		localVarQueryParams.Add("tokenize_as", parameterToString(*r.tokenizeAs, ""))
+	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}
 

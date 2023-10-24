@@ -140,6 +140,11 @@ type Session struct {
 	// UpdatedAt is a helper struct field for gobuffalo.pop.
 	UpdatedAt time.Time `json:"-" faker:"-" db:"updated_at"`
 
+	// Tokenized is the tokenized (e.g. JWT) version of the session.
+	//
+	// It is only set when the `tokenize` query parameter was set to a valid tokenize template during calls to `/session/whoami`.
+	Tokenized string `json:"tokenized,omitempty" faker:"-" db:"-"`
+
 	// The Session Token
 	//
 	// The token of this session.
@@ -163,8 +168,14 @@ func (s *Session) CompletedLoginFor(method identity.CredentialsType, aal identit
 	s.AMR = append(s.AMR, AuthenticationMethod{Method: method, AAL: aal, CompletedAt: time.Now().UTC()})
 }
 
-func (s *Session) CompletedLoginForWithProvider(method identity.CredentialsType, aal identity.AuthenticatorAssuranceLevel, providerID string) {
-	s.AMR = append(s.AMR, AuthenticationMethod{Method: method, AAL: aal, Provider: providerID, CompletedAt: time.Now().UTC()})
+func (s *Session) CompletedLoginForWithProvider(method identity.CredentialsType, aal identity.AuthenticatorAssuranceLevel, providerID string, organizationID string) {
+	s.AMR = append(s.AMR, AuthenticationMethod{
+		Method:       method,
+		AAL:          aal,
+		CompletedAt:  time.Now().UTC(),
+		Provider:     providerID,
+		Organization: organizationID,
+	})
 }
 
 func (s *Session) AuthenticatedVia(method identity.CredentialsType) bool {
@@ -330,6 +341,9 @@ type AuthenticationMethod struct {
 
 	// OIDC or SAML provider id used for authentication
 	Provider string `json:"provider,omitempty"`
+
+	// The Organization id used for authentication
+	Organization string `json:"organization,omitempty"`
 }
 
 // Scan implements the Scanner interface.

@@ -56,6 +56,7 @@ type (
 		config.Provider
 		ErrorHandlerProvider
 		sessiontokenexchange.PersistenceProvider
+		x.LoggingProvider
 	}
 	HandlerProvider interface {
 		LoginHandler() *Handler
@@ -187,8 +188,29 @@ preLoginHook:
 		f.UI.Messages.Add(text.NewInfoLoginMFA())
 	}
 
-	var s Strategy
-	for _, s = range h.d.LoginStrategies(r.Context()) {
+	var strategyFilters []StrategyFilter
+	orgID := uuid.NullUUID{
+		Valid: false,
+	}
+	if rawOrg := r.URL.Query().Get("organization"); rawOrg != "" {
+		orgIDFromURL, err := uuid.FromString(rawOrg)
+		if err != nil {
+			h.d.Logger().WithError(err).Warnf("Ignoring invalid UUID %q in query parameter `organization`.", rawOrg)
+		} else {
+			orgID = uuid.NullUUID{UUID: orgIDFromURL, Valid: true}
+		}
+	}
+
+	if sess != nil && sess.Identity != nil && sess.Identity.OrganizationID.Valid {
+		orgID = sess.Identity.OrganizationID
+	}
+
+	if orgID.Valid {
+		f.OrganizationID = orgID
+		strategyFilters = []StrategyFilter{func(s Strategy) bool { return s.ID() == identity.CredentialsTypeOIDC }}
+	}
+
+	for _, s := range h.d.LoginStrategies(r.Context(), strategyFilters...) {
 		if err := s.PopulateLoginMethod(r, f.RequestedAAL, f); err != nil {
 			return nil, nil, err
 		}
@@ -360,6 +382,13 @@ type createBrowserLoginFlow struct {
 	// required: false
 	// in: query
 	HydraLoginChallenge string `json:"login_challenge"`
+
+	// An optional organization ID that should be used for logging this user in.
+	// This parameter is only effective in the Ory Network.
+	//
+	// required: false
+	// in: query
+	Organization string `json:"organization"`
 }
 
 // swagger:route GET /self-service/login/browser frontend createBrowserLoginFlow

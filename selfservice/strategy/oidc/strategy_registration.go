@@ -10,6 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gofrs/uuid"
+	"github.com/julienschmidt/httprouter"
+
+	"github.com/ory/x/otelx"
 	"github.com/ory/x/sqlxx"
 
 	"github.com/ory/herodot"
@@ -148,6 +152,9 @@ func (s *Strategy) newLinkDecoder(p interface{}, r *http.Request) error {
 }
 
 func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, f *registration.Flow, i *identity.Identity) (err error) {
+	ctx, span := s.d.Tracer(r.Context()).Tracer().Start(r.Context(), "selfservice.strategy.oidc.strategy.Register")
+	defer otelx.End(span, &err)
+
 	var p UpdateRegistrationFlowWithOidcMethod
 	if err := s.newLinkDecoder(&p, r); err != nil {
 		return s.handleError(w, r, f, "", nil, err)
@@ -162,21 +169,31 @@ func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, f *registrat
 		return errors.WithStack(flow.ErrStrategyNotResponsible)
 	}
 
-	if err := flow.MethodEnabledAndAllowed(r.Context(), f.GetFlowName(), s.SettingsStrategyID(), s.SettingsStrategyID(), s.d); err != nil {
+	if !strings.EqualFold(strings.ToLower(p.Method), s.SettingsStrategyID()) && p.Method != "" {
+		// the user is sending a method that is not oidc, but the payload includes a provider
+		s.d.Audit().
+			WithRequest(r).
+			WithField("provider", p.Provider).
+			WithField("method", p.Method).
+			Warn("The payload includes a `provider` field but is using a method other than `oidc`. Therefore, social sign in will not be executed.")
+		return errors.WithStack(flow.ErrStrategyNotResponsible)
+	}
+
+	if err := flow.MethodEnabledAndAllowed(ctx, f.GetFlowName(), s.SettingsStrategyID(), s.SettingsStrategyID(), s.d); err != nil {
 		return s.handleError(w, r, f, pid, nil, err)
 	}
 
-	provider, err := s.provider(r.Context(), r, pid)
+	provider, err := s.provider(ctx, r, pid)
 	if err != nil {
 		return s.handleError(w, r, f, pid, nil, err)
 	}
 
-	c, err := provider.OAuth2(r.Context())
+	c, err := provider.OAuth2(ctx)
 	if err != nil {
 		return s.handleError(w, r, f, pid, nil, err)
 	}
 
-	req, err := s.validateFlow(r.Context(), r, f.ID)
+	req, err := s.validateFlow(ctx, r, f.ID)
 	if err != nil {
 		return s.handleError(w, r, f, pid, nil, err)
 	}
@@ -192,7 +209,7 @@ func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, f *registrat
 		if err != nil {
 			return s.handleError(w, r, f, pid, nil, err)
 		}
-		_, err = s.processRegistration(w, r, f, nil, claims, provider, &authCodeContainer{
+		_, err = s.processRegistration(w, r, f, nil, claims, provider, &AuthCodeContainer{
 			FlowID:           f.ID.String(),
 			Traits:           p.Traits,
 			TransientPayload: f.TransientPayload,
@@ -204,11 +221,11 @@ func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, f *registrat
 	}
 
 	state := generateState(f.ID.String())
-	if code, hasCode, _ := s.d.SessionTokenExchangePersister().CodeForFlow(r.Context(), f.ID); hasCode {
+	if code, hasCode, _ := s.d.SessionTokenExchangePersister().CodeForFlow(ctx, f.ID); hasCode {
 		state.setCode(code.InitCode)
 	}
-	if err := s.d.ContinuityManager().Pause(r.Context(), w, r, sessionName,
-		continuity.WithPayload(&authCodeContainer{
+	if err := s.d.ContinuityManager().Pause(ctx, w, r, sessionName,
+		continuity.WithPayload(&AuthCodeContainer{
 			State:            state.String(),
 			FlowID:           f.ID.String(),
 			Traits:           p.Traits,
@@ -262,7 +279,7 @@ func (s *Strategy) registrationToLogin(w http.ResponseWriter, r *http.Request, r
 	return lf, nil
 }
 
-func (s *Strategy) processRegistration(w http.ResponseWriter, r *http.Request, rf *registration.Flow, token *oauth2.Token, claims *Claims, provider Provider, container *authCodeContainer, idToken string) (*login.Flow, error) {
+func (s *Strategy) processRegistration(w http.ResponseWriter, r *http.Request, rf *registration.Flow, token *oauth2.Token, claims *Claims, provider Provider, container *AuthCodeContainer, idToken string) (*login.Flow, error) {
 	if _, _, err := s.d.PrivilegedIdentityPool().FindByCredentialsIdentifier(r.Context(), identity.CredentialsTypeOIDC, identity.OIDCUniqueID(provider.Config().ID, claims.Subject)); err == nil {
 		// If the identity already exists, we should perform the login flow instead.
 
@@ -318,9 +335,7 @@ func (s *Strategy) processRegistration(w http.ResponseWriter, r *http.Request, r
 	}
 
 	var it string = idToken
-	var (
-		cat, crt string
-	)
+	var cat, crt string
 	if token != nil {
 		if idToken, ok := token.Extra("id_token").(string); ok {
 			if it, err = s.d.Cipher(r.Context()).Encrypt(r.Context(), []byte(idToken)); err != nil {
@@ -339,7 +354,7 @@ func (s *Strategy) processRegistration(w http.ResponseWriter, r *http.Request, r
 		}
 	}
 
-	creds, err := identity.NewCredentialsOIDC(it, cat, crt, provider.Config().ID, claims.Subject)
+	creds, err := identity.NewCredentialsOIDC(it, cat, crt, provider.Config().ID, claims.Subject, provider.Config().OrganizationID)
 	if err != nil {
 		return nil, s.handleError(w, r, rf, provider.Config().ID, i.Traits, err)
 	}
@@ -352,7 +367,7 @@ func (s *Strategy) processRegistration(w http.ResponseWriter, r *http.Request, r
 	return nil, nil
 }
 
-func (s *Strategy) createIdentity(w http.ResponseWriter, r *http.Request, a *registration.Flow, claims *Claims, provider Provider, container *authCodeContainer, jn *bytes.Buffer) (*identity.Identity, []VerifiedAddress, error) {
+func (s *Strategy) createIdentity(w http.ResponseWriter, r *http.Request, a *registration.Flow, claims *Claims, provider Provider, container *AuthCodeContainer, jn *bytes.Buffer) (*identity.Identity, []VerifiedAddress, error) {
 	var jsonClaims bytes.Buffer
 	if err := json.NewEncoder(&jsonClaims).Encode(claims); err != nil {
 		return nil, nil, s.handleError(w, r, a, provider.Config().ID, nil, err)
@@ -387,6 +402,10 @@ func (s *Strategy) createIdentity(w http.ResponseWriter, r *http.Request, a *reg
 		return nil, nil, s.handleError(w, r, a, provider.Config().ID, i.Traits, err)
 	}
 
+	if orgID := httprouter.ParamsFromContext(r.Context()).ByName("organization"); orgID != "" {
+		i.OrganizationID = uuid.NullUUID{UUID: x.ParseUUID(orgID), Valid: true}
+	}
+
 	s.d.Logger().
 		WithRequest(r).
 		WithField("oidc_provider", provider.Config().ID).
@@ -397,7 +416,7 @@ func (s *Strategy) createIdentity(w http.ResponseWriter, r *http.Request, a *reg
 	return i, va, nil
 }
 
-func (s *Strategy) setTraits(w http.ResponseWriter, r *http.Request, a *registration.Flow, claims *Claims, provider Provider, container *authCodeContainer, evaluated string, i *identity.Identity) error {
+func (s *Strategy) setTraits(w http.ResponseWriter, r *http.Request, a *registration.Flow, claims *Claims, provider Provider, container *AuthCodeContainer, evaluated string, i *identity.Identity) error {
 	jsonTraits := gjson.Get(evaluated, "identity.traits")
 	if !jsonTraits.IsObject() {
 		return errors.WithStack(herodot.ErrInternalServerError.WithReasonf("OpenID Connect Jsonnet mapper did not return an object for key identity.traits. Please check your Jsonnet code!"))

@@ -118,8 +118,8 @@ type (
 	}
 )
 
-func NewStrategy(deps strategyDependencies) *Strategy {
-	return &Strategy{deps: deps, dx: decoderx.NewHTTP()}
+func NewStrategy(deps any) *Strategy {
+	return &Strategy{deps: deps.(strategyDependencies), dx: decoderx.NewHTTP()}
 }
 
 func (s *Strategy) ID() identity.CredentialsType {
@@ -150,10 +150,7 @@ func (s *Strategy) PopulateMethod(r *http.Request, f flow.Flow) error {
 		} else if f.GetFlowName() == flow.LoginFlow {
 			// we use the identifier label here since we don't know what
 			// type of field the identifier is
-			nodes.Upsert(
-				node.NewInputField("identifier", nil, node.DefaultGroup, node.InputAttributeTypeText, node.WithRequiredInputAttribute).
-					WithMetaLabel(text.NewInfoNodeLabelID()),
-			)
+			nodes.Upsert(node.NewInputField("identifier", "", node.DefaultGroup, node.InputAttributeTypeText, node.WithRequiredInputAttribute).WithMetaLabel(text.NewInfoNodeLabelID()))
 		} else if f.GetFlowName() == flow.RegistrationFlow {
 			ds, err := s.deps.Config().DefaultIdentityTraitsSchemaURL(r.Context())
 			if err != nil {
@@ -162,13 +159,13 @@ func (s *Strategy) PopulateMethod(r *http.Request, f flow.Flow) error {
 
 			// set the traits on the default group so that the ui can render them
 			// this prevents having multiple of the same ui fields on the same ui form
-			traitNodes, err := container.NodesFromJSONSchema(r.Context(), node.CodeGroup, ds.String(), "", nil)
+			traitNodes, err := container.NodesFromJSONSchema(r.Context(), node.DefaultGroup, ds.String(), "", nil)
 			if err != nil {
 				return err
 			}
 
 			for _, n := range traitNodes {
-				nodes.Append(n)
+				nodes.Upsert(n)
 			}
 		}
 
@@ -221,6 +218,15 @@ func (s *Strategy) PopulateMethod(r *http.Request, f flow.Flow) error {
 			// so we can retry the code flow with the same data
 			for _, n := range f.GetUI().Nodes {
 				if n.Group == node.DefaultGroup {
+					// we don't need the user to change the values here
+					// for better UX let's make them disabled
+					// when there are errors we won't hide the fields
+					if len(n.Messages) == 0 {
+						if input, ok := n.Attributes.(*node.InputAttributes); ok {
+							input.Type = "hidden"
+							n.Attributes = input
+						}
+					}
 					freshNodes = append(freshNodes, n)
 				}
 			}
@@ -240,7 +246,16 @@ func (s *Strategy) PopulateMethod(r *http.Request, f flow.Flow) error {
 					continue
 				}
 
-				if n.Group == node.CodeGroup {
+				if n.Group == node.DefaultGroup {
+					// we don't need the user to change the values here
+					// for better UX let's make them disabled
+					// when there are errors we won't hide the fields
+					if len(n.Messages) == 0 {
+						if input, ok := n.Attributes.(*node.InputAttributes); ok {
+							input.Type = "hidden"
+							n.Attributes = input
+						}
+					}
 					freshNodes = append(freshNodes, n)
 				}
 			}
