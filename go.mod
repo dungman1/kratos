@@ -19,7 +19,7 @@ require (
 	github.com/avast/retry-go/v3 v3.1.1
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 	github.com/bwmarrin/discordgo v0.23.0
-	github.com/bxcodec/faker/v3 v3.3.1
+	github.com/go-faker/faker/v4 v4.2.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/cortesi/modd v0.0.0-20210323234521-b35eddab86cc
@@ -75,7 +75,7 @@ require (
 	github.com/ory/jsonschema/v3 v3.0.8
 	github.com/ory/mail/v3 v3.0.0
 	github.com/ory/nosurf v1.2.7
-	github.com/ory/x v0.0.595
+	github.com/ory/x v0.0.597
 	github.com/peterhellberg/link v1.2.0
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
 	github.com/pkg/errors v0.9.1
